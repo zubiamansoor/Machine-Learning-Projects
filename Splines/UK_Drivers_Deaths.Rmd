@@ -1,0 +1,403 @@
+---
+title: "Analysis of UK Drivers Deaths using Splines"
+author: "Zubia Mansoor"
+date: "02/12/2020"
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+  - \usepackage{amsfonts}
+  - \DeclareMathOperator{\sgn}{sgn}
+---
+
+# Exploratory Data Analysis
+
+```{r, echo=F, message=F, warning=F}
+  library(datasets)
+  library(tidyverse)
+  library(splines)
+  library(KernSmooth)
+  knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+```
+
+The ```datasets``` package has a set called ```UKDriverDeaths```. The data contains monthly counts of automobile drivers killed in the UK from 1969 through 1984.
+
+Let us view the first 10 rows of the dataset ```UKDriversDeath```.
+
+```{r, echo=F}
+  death.data =  data.frame(UKDriverDeaths)
+  colnames(death.data) = "Deaths"
+  head(death.data)
+```
+
+The next step is to plot the time series data as below:
+
+```{r, echo=F}
+  years = 1969:1984
+  plot(death.data, 
+       main = "Plot of timse series data of UK Driver Deaths", 
+       ylab = "Deaths", xlab = "Year", type = "l")
+  axis(side = 1, at = years)
+```
+
+We observe that certain months of the year have generally higher death rates than others, creating a cyclic spiky pattern. We also see that the longer-term multi-year trends do not depict a flat line. Here, we are interested in the main mean trend ignoring the seasonal fluctuations.
+
+Overall, we see an increasing death toll for the years 1969-1973. There is a steep decrease in deaths at the beginning of 1974. We then see a more or less similar pattern for the years 1974-1980. Following this, we again see a decrease in deaths most pronounced in the 1983-1984 bracket.
+
+Let us zoom in to look at the trend between the years 1980 and 1984.
+
+```{r, echo=F}
+  plot(window(death.data$Deaths, start = 1980, end = 1984),
+       main = "Plot of timse series data of UK Driver Deaths\n(1980-1984)", 
+       ylab = "Number of deaths", xlab = "Year", type = "l")
+  abline(v = years)
+```
+
+Yes, there clearly appears to be a significant decrease in deaths between 1983 and 1984 as compared to the other years.
+
+\newpage
+
+# Natural cubic splines
+
+Here, we will use ```natural cubic splines``` with different degrees of freedom to capture the main mean trend while smoothing
+over the monthly spiky-ness.
+
+```{r, echo=F}
+  # Prepare x-values
+  death.data$time = 1:dim(death.data)[1]
+
+  # Use natural cubic splines with 3, 4, 5, 6, 7 DFs
+  nat.cub.sp3 = ns(death.data$time, df=3)
+  nat.cub.sp4 = ns(death.data$time, df=4)
+  nat.cub.sp5 = ns(death.data$time, df=5)
+  nat.cub.sp6 = ns(death.data$time, df=6)
+  nat.cub.sp7 = ns(death.data$time, df=7)
+  
+  
+  # Fit trend using natural splines
+  model.nat.cub.sp3 = lm(Deaths~nat.cub.sp3, data = death.data )
+  model.nat.cub.sp4 = lm(Deaths~nat.cub.sp4, data = death.data )
+  model.nat.cub.sp5 = lm(Deaths~nat.cub.sp5, data = death.data )
+  model.nat.cub.sp6 = lm(Deaths~nat.cub.sp6, data = death.data )
+  model.nat.cub.sp7 = lm(Deaths~nat.cub.sp7, data = death.data )
+```
+
+```{r, echo=F}
+  # Make a plot of original trend and  
+  # overlay splines with different DFS
+  plot(x = death.data$time, y = death.data$Deaths, 
+       main = "Natural cubic splines for UK Driver Deaths", 
+       ylab = "Number of deaths", xlab = "Year", type = "l")
+  legend("topright", 
+         legend=c("Nat Cub Spline 3 df",
+                  "Nat Cub Spline 4 df",
+                  "Nat Cub Spline 5 df (best)",
+                  "Nat Cub Spline 7 df"), 
+       lty="solid", col=c("blue", "brown", "red", "darkgreen"), 
+       lwd=2, bty = "n")
+  lines(x = death.data$time, 
+        predict(model.nat.cub.sp3, newdata=death.data),
+        col= "blue", lwd = 2)
+   lines(x = death.data$time, 
+        predict(model.nat.cub.sp4, newdata=death.data),
+        col= "brown", lwd = 2)
+  lines(x = death.data$time, 
+        predict(model.nat.cub.sp5, newdata=death.data),
+        col= "red", lwd = 2)
+  lines(x = death.data$time, 
+        predict(model.nat.cub.sp7, newdata=death.data),
+        col= "darkgreen", lwd = 2)
+```
+
+```{r, echo=F}
+  # Calculate MSPEs 
+  mse.nat3 = mean((predict(model.nat.cub.sp3, newdata=death.data) -
+                      death.data$Deaths)^2)
+  mse.nat4 = mean((predict(model.nat.cub.sp4, newdata=death.data) -
+                      death.data$Deaths)^2)
+  mse.nat5 = mean((predict(model.nat.cub.sp5, newdata=death.data) -
+                      death.data$Deaths)^2)
+  mse.nat6 = mean((predict(model.nat.cub.sp6, newdata=death.data) -
+                      death.data$Deaths)^2)
+  mse.nat7 = mean((predict(model.nat.cub.sp7, newdata=death.data) -
+                      death.data$Deaths)^2)
+  
+  print(paste0("The MSEs for natural cubic splines with 3, 4, 5, 6, 7 DFs are:"))
+  c(mse.nat3, mse.nat4, mse.nat5, mse.nat6, mse.nat7)
+```
+
+We fit natural cubic splines with degrees of freedom ranging from 3 to 7. For visual inspection, we plot the trend achieved by the natural cubic splines using 3, 4, 5 and 7 degrees of freedom. We observe that the cubic spline with ```3 DF``` is almost a straight line and fails to capture the underlying trend. Using ```5 DF``` appears to model the trend well without chasing the monlthy wiggliness too much and exhibits similar performance to a ```7 DF``` spline. Since we do not gain much by increasing the degrees of freedom, *the natural cubic spline with 5 DF is our best chosen curve*. If we go futher than that, we run the risk of chasing the monthly cycles.
+
+We also take a look at their MSEs and the model with 5 DFs has the second lowest error. We note that the MSE goes down as we use 7 DFs or higher, possibly as the model starts chasing the monlthy trend rather than the main mean trend.
+
+# Optimal Smoothing splines
+
+In this case, we will use ```optimal smoothing splines``` obtained using N-fold and Generalized cross-validation to model the ```UKDriverDeaths```. Following are the results from each method.
+
+```{r, echo=F}
+  death.data =  data.frame(UKDriverDeaths)
+  colnames(death.data) = "Deaths"
+  # Prepare x-values
+  death.data$time = 1:dim(death.data)[1]
+```
+
+```{r, echo=F}
+  # Fit optimal smoothing spline with N-fold cross-validation
+  model.smooth.n = smooth.spline(y = death.data$Deaths, 
+                                 x = death.data$time, cv=TRUE)
+  model.smooth.n
+```  
+
+```{r, echo=F}
+  # Fit optimal smoothing spline with generalized cross-validation
+  model.smooth.gcv = smooth.spline(y = death.data$Deaths, 
+                                   x = death.data$time, cv=FALSE)
+  model.smooth.gcv
+```
+
+```{r, echo=F}
+  plot(x = death.data$time, y = death.data$Deaths, 
+         main = "Optimal Smoothing spline for UK Driver Deaths", 
+         ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", legend=c("N-fold", "Generalized CV"), 
+         lty="solid", col=c("blue", "red"), 
+         lwd=2, bty = "n")
+  lines(model.smooth.n, col = "blue", lwd=4)
+  lines(model.smooth.gcv, col = "red", lwd=2)
+```
+
+
+**(a)** Our goal is to achieve the main mean trend while smoothing over the monthly wiggliness. As is evident, the optimal smoothing splines obtained through ```N-fold``` and ```Generalized``` cross validation heavily chases the monthly fluctuations. Hence, it does a poor job of achieving our goal.
+
+**(b)** The degrees of freedom obtained using ```N-fold``` and ```Generalized``` cross validation are 75 and 73 respectively. These are very high and hence very different from what we obtained using natural cubic splines (5 DF).
+
+\newpage
+
+# Loess curves
+
+```{r, echo=F}
+  death.data =  data.frame(UKDriverDeaths)
+  colnames(death.data) = "Deaths"
+  # Prepare x-values
+  death.data$time = 1:dim(death.data)[1]
+```
+
+We will now fit ```loess``` curves with varying spans and degrees of freedom to the ```UKDriverDeaths```. First, we try out different spans in the set {100%, 75%, 50%, 25%, 15%, 5%}. After selecting the best span, we try out the different degrees of freedom associated with it. Note that the ```loess``` in ```R``` uses a tri-cube kernel.
+
+```{r, echo=F, warning=F}
+  # Fit loess curve with span = 1 and degree = 2
+  lo.100 = loess(data = death.data, Deaths ~ time, span = 1)
+  
+  # Fit loess curve with span = 0.75 and degree = 2
+  lo.75 = loess(data = death.data, Deaths ~ time)
+  
+  # Fit loess curve with span = 0.50 and degree = 2
+  lo.50 = loess(data = death.data, Deaths ~ time, span = 0.5)
+  
+  # Fit loess curve with span = 0.25 and degree = 2
+  lo.25 = loess(data = death.data, Deaths ~ time, span = 0.25)
+  
+  # Fit loess curve with span = 0.15 and degree = 2
+  lo.15 = loess(data = death.data, Deaths ~ time, span = 0.15)
+  
+  # Fit loess curve with span = 0.05 and degree = 2
+  lo.05 = loess(data = death.data, Deaths ~ time, span = 0.05)
+```
+
+Let us first inspect the performance of ```loess``` curves over different spans visually.
+
+```{r, echo=F}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Loess Curves with different spans\n(50%-100%)", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Loess 100% span",
+                    "Loess 75% span",
+                    "Loess 50% span"), 
+         lty="solid", col=c("red", "brown", "blue"), 
+         lwd=2, bty = "n")
+  lines(x = death.data$time, y = predict(lo.100, newdata=death.data), 
+        col = "red", lwd = 2)
+  lines(x = death.data$time, y = predict(lo.75, newdata=death.data), 
+        col = "brown", lwd = 2)
+  lines(x = death.data$time, y = predict(lo.50, newdata=death.data), 
+        col = "blue", lwd = 2)
+```
+
+```{r, echo=F}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Loess Curves with different spans\n(5%-25%)", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Loess 25% span",
+                    "Loess 15% span",
+                    "Loess 5% span"), 
+         lty="solid", col=c(colors()[121], colors()[145], colors()[84]), 
+         lwd=2, bty = "n")
+  lines(x = death.data$time, y = predict(lo.25, newdata=death.data), 
+        col = colors()[121], lwd = 2)
+  lines(x = death.data$time, y = predict(lo.15, newdata=death.data), 
+        col = colors()[145], lwd = 2)
+  lines(x = death.data$time, y = predict(lo.05, newdata=death.data), 
+        col = colors()[84], lwd = 2)
+```
+
+Looking at the first plot, we can say that loess curves with 100% and 75% do not capture the mean trend adequately and is almost a flat line. The second plot shows us that 5%, 15% and 20% span start overfitting the data and chasing the monthly patterns. Based on the graphs, the loess curve with 50% span appears to perform fairly well and captures the overall trend.
+
+
+For the loess curve with 50% span, we try out the different degrees of freedom in the set {0, 1, 2}. Below is the plot showing the results.
+
+```{r, echo=F}
+  # Fit loess curve with span = 0.50 and degree = 1
+  lo.50.1 = loess(data = death.data, Deaths ~ time, span = 0.5, degree = 1)
+  
+  # Fit loess curve with span = 0.50 and degree = 0
+  lo.50.0 = loess(data = death.data, Deaths ~ time, span = 0.5, degree = 0)
+```
+
+```{r, echo=F, fig.width=12, fig.height=6}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Loess Curves (50%) with different DFs", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Loess 2 DF",
+                    "Loess 1 DF",
+                    "Loess 0 DF"), 
+         lty="solid", col=c("red", "brown", "blue"), 
+         lwd=2, bty = "n")
+  lines(x = death.data$time, y = predict(lo.50, newdata=death.data), 
+        col = "red", lwd = 2)
+  lines(x = death.data$time, y = predict(lo.50.1, newdata=death.data), 
+        col = "brown", lwd = 2)
+  lines(x = death.data$time, y = predict(lo.50.0, newdata=death.data), 
+        col = "blue", lwd = 2)
+```
+
+Thus, it is evident that the *loess curve with 50% span and 2 DFs is our best chosen curve*. The other two models have similar performance in the sense that they are unable to represent the main mean trend well.
+
+**(a)** We repeat the same analysis, now with a ```normal kernel```. We try different bandwidths in the range {100%, 50%, 25%, 5%} scaled by the standard deviation of X-values. Below is the plot depicting the different curves.
+
+```{r, echo=F, fig.width=12, fig.height=6}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Normal Kernel Smoother with different bandwidths", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Bandwidth 100%",
+                    "Bandwidth 50% (best)",
+                    "Bandwidth 25%",
+                    "Bandwidth 5%"), 
+         lty="solid", col=c("red", "blue", "darkgreen", "brown"), 
+         lwd=2, bty = "n")
+  
+  sd.x = sd(death.data$time)
+  
+  # Fit normal kernel with different bandwiths
+  lp.100 = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=1*sd.x, degree=2)
+  
+  lp.50 = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=0.5*sd.x, degree=2)
+
+  lp.25 = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=0.25*sd.x, degree=2)
+  
+  lp.05 = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=0.05*sd.x, degree=2)
+  
+  lines(lp.100, col="red", lwd=2)
+  lines(lp.50, col="blue", lwd=2)
+  lines(lp.25, col="darkgreen", lwd=2)
+  lines(lp.05, col="brown", lwd=2)
+```
+
+The figure above shows that 100% bandwidth is unable to capture the trend whereas 5% captures the seasonal patterns as well. Somewhere in between, 25% appears to model the trend moderately except at the very end where we expect the mean death rate to go down. Hence, the *normal kernel with 50% bandwidth ($\approx$ 27 months) is our best chosen curve*.
+
+**(b)** Again, we repeat the analysis with a ```normal kernel``` this time using an optimal bandwidth as shown below.
+
+````{r, echo=F, fig.width=12, fig.height=6}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Normal Kernel Smoother with Optimal Bandwidth", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  
+  # Fit normal kernel with optimal bandwith 
+  lambda = dpill(x=death.data$time, y=death.data$Deaths)
+  lp.opt = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=lambda, degree=2)
+  lines(lp.opt, col=colors()[84], lwd=2)
+  
+  print(paste0("The optimal bandwidth is: ", round(lambda, 3)))
+```
+
+The normal kernel smoother with optimal bandwidth ($\approx$ 7 months) appears to be chasing the monthly wiggliness, especially at the tail where we expect a fall in overall death rate.
+
+\newpage
+
+**Comparison between best chosen normal kernel and optimal kernel**
+
+```{r, echo=F}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Best Chosen Bandwidth vs Optimal Bandwith", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Bandwidth 50%",
+                    "Optimal Bandwidth"), 
+         lty="solid", col=c(col=colors()[121], colors()[84]), 
+         lwd=2, bty = "n")
+  
+  # Overlay Normal Kernel Smoother
+  lines(x = death.data$time, y = predict(lo.50, newdata=death.data), 
+       col=colors()[121], lwd = 2)
+  lines(lp.opt, col=colors()[84], lwd=2)
+```
+
+Comparing the normal kernel with best chosen and optimal bandwidths, we can say that the former seems to be doing a much better job at capturing the overall mean death trend while the latter succumbs to seasonal fluctuations.
+
+\newpage
+
+## Comparison between different splines
+
+Finally, we compare the best results from each type of smoother namely ```natural cubic splines```, ```loess curves``` and ```normal kernel smoothers```.
+
+```{r, echo=F, message=F, warning=F}
+  library(datasets)
+  library(tidyverse)
+  library(splines)
+  library(KernSmooth)
+  knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+```
+
+```{r, echo=F}
+  death.data =  data.frame(UKDriverDeaths)
+  colnames(death.data) = "Deaths"
+  # Prepare x-values
+  death.data$time = 1:dim(death.data)[1]
+```
+
+```{r, echo=F}
+  # Collection of best chosen curves
+  # Fit natural cibic spline with 5 DF
+  nat.cub.sp5 = ns(death.data$time, df=5)
+  model.nat.cub.sp5 = lm(Deaths~nat.cub.sp5, data = death.data )
+  
+  # Fit loess curve with span = 0.50 and degree = 2
+  lo.50 = loess(data = death.data, Deaths ~ time, span = 0.5)
+  
+  # Fit normal kernel smoother with 50% bandwidth
+  sd.x = sd(death.data$time)
+  lp.50 = locpoly(x=death.data$time, y=death.data$Deaths, bandwidth=0.5*sd.x, degree=2)
+```
+
+```{r, echo=F}
+  plot(x = death.data$time, y = death.data$Deaths, 
+           main = "Comparison of smoothers on UK Driver Deaths", 
+           ylab = "Number of Deaths", xlab = "Year", type = "l")
+  legend("topright", 
+           legend=c("Nat Cub Spline 5 df",
+                    "Loess 50% Span, 2 DF",
+                    "Normal Kernel Bandwidth 50%"), 
+         lty="solid", col=c(col=colors()[121], colors()[84], colors()[145]), 
+         lwd=2, bty = "n")
+  lines(x = death.data$time, 
+          predict(model.nat.cub.sp5, newdata=death.data),
+          col = colors()[121], lwd = 2)
+  lines(x = death.data$time, y = predict(lo.50, newdata=death.data), 
+          col = colors()[84], lwd = 2)
+  lines(lp.50, col=colors()[145], lwd=2)
+```
+
+Comparing the best results from each type of smoother, we observe that they all exhibit quite similar performance. Hence, we cannot objectively label one class of smoothers as 'best' in this case. It is important to note that for both smoothing splines and normal kernel smoothers, the optimal setting seems to model the monthly cycles better than the long-term multi-year trend.
